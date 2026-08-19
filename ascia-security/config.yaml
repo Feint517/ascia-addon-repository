@@ -1,0 +1,55 @@
+# Home Assistant add-on manifest for ascia-security.
+# Supervisor reads this to install, configure, and run the add-on.
+#
+# Plan: see ../../docs/C6B_BFF_AND_SECURITY_PLAN.md  ·  Persistence: see ../../docs/adr/0001-per-addon-sqlite-storage.md
+name: ASCIA Security
+slug: ascia_security
+version: "0.1.2111"
+description: >-
+  Identity store + policy for ASCIA OS: the user->role/zone map and the encrypted,
+  tamper-evident audit log. The BFF resolves a logged-in user's role/zones here and records
+  audit events. Internal add-on, reached only through the ascia-frontend BFF.
+arch:
+  - amd64
+  - aarch64
+
+# Decision #8: Supervisor PULLS a prebuilt image from our private registry; it never builds from
+# this folder. {arch} is templated by Supervisor; CI rewrites the version line at publish time.
+# TODO(org-transfer): flip ghcr.io/feint517 -> ghcr.io/ascia when the repo moves to the org.
+image: "ghcr.io/feint517/{arch}-ascia-security"
+
+# ascia-base inherits HA's S6 /init as PID 1, and we ship our own S6 service (see rootfs),
+# so Supervisor must NOT inject its own init.
+init: false
+
+# Zero-touch provisioning (Phase 3): ascia-provisioning is the fleet's sole starter. This add-on
+# stays stopped on a fresh image until the operator injects the shared secret, then the operator
+# starts it and flips it back to boot: auto — so it can't crash-loop before the secret exists.
+# See ../../docs/ZERO_TOUCH_PROVISIONING_PLAN.md (Phase 3); the operator itself is boot: auto.
+boot: manual
+
+# Internal API only — reached through the ascia-frontend BFF (single origin), not exposed
+# directly. Each ASCIA add-on owns a UNIQUE port (this one 8123: device-manager 8124 host_network,
+# vpn 8120, 3d-engine 8121, backup 8122). null = not published on the host; for direct dev access
+# map a host port in the add-on's Configuration -> Network section (see docs/HAOS_VM.md).
+ports:
+  8123/tcp: null
+ports_description:
+  8123/tcp: ASCIA Security API (internal; proxied by the ascia-frontend BFF)
+
+# Persistent per-add-on storage for the SQLite store (security.db) and the AES-256-GCM audit
+# key (audit-key.bin). app_config maps to /data, which survives image updates.
+map:
+  - app_config:rw
+
+# Default options + schema. service_token / user_signing_key are the gateway-auth shared secrets
+# (same values configured on the BFF). Listed in `options` with empty defaults so the HA
+# Configuration UI renders them; the entrypoint fails fast if either is left empty.
+options:
+  log_level: info
+  service_token: ""
+  user_signing_key: ""
+schema:
+  log_level: list(debug|info|warning|error)?
+  service_token: password?
+  user_signing_key: password?

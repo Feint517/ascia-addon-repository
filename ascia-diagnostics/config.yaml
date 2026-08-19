@@ -1,0 +1,78 @@
+# Home Assistant add-on manifest for ascia-diagnostics.
+# Supervisor reads this to install, configure, and run the add-on.
+#
+# ascia-diagnostics is the appliance/system-health add-on (spec Module 14, P0). It samples host
+# metrics (CPU/RAM/disk/temperature/uptime via psutil), per-container stats (each ASCIA add-on +
+# HA Core + Supervisor, via the Supervisor stats API), and best-effort cross-add-on signals
+# (backup + network health), then rolls them into a transparent 0-100 health score. Every collector
+# degrades gracefully to "unavailable" (with a reason) rather than failing — a metric a given board
+# can't provide (e.g. no thermal zone on a VM) never tanks the score.
+name: ASCIA Diagnostics
+slug: ascia_diagnostics
+version: "0.1.2111"
+description: >-
+  Appliance/system health: CPU, RAM, disk, temperature, uptime, per-add-on container health, and a
+  transparent 0-100 health score with recommendations. Every metric degrades gracefully.
+arch:
+  - amd64
+  - aarch64
+
+# Decision #8: Supervisor PULLS a prebuilt image from our registry; it never builds from this
+# folder. {arch} is templated by Supervisor. CI rewrites the patch version at publish time.
+# TODO(org-transfer): flip ghcr.io/feint517 -> ghcr.io/ascia when the repo moves to the org.
+image: "ghcr.io/feint517/{arch}-ascia-diagnostics"
+
+# ascia-base inherits HA's S6 /init as PID 1 and we ship our own S6 service (see rootfs), so
+# Supervisor must NOT inject its own init.
+init: false
+
+# Zero-touch provisioning (Phase 3): ascia-provisioning is the fleet's sole starter. This add-on
+# stays stopped on a fresh image until the operator injects the shared secret, then the operator
+# starts it and flips it to boot: auto — so it can't crash-loop before the secret exists.
+boot: manual
+
+# Internal API only — reached through the ascia-frontend BFF (single origin), not exposed directly.
+ports:
+  8127/tcp: null
+ports_description:
+  8127/tcp: ASCIA Diagnostics API (internal; proxied by the ascia-frontend BFF)
+
+# HA Core API proxy (http://supervisor/core/api) via SUPERVISOR_TOKEN — the SDK's HAClient uses it
+# for the OPTIONAL battery/house-temperature collector (off by default). Read-only.
+homeassistant_api: true
+# Supervisor API. `manager` (not `default`) because reading another container's stats fleet-wide
+# — GET /addons/{slug}/stats, /core/stats, /supervisor/stats, plus /addons for the fleet list — is
+# gated above the default role. Diagnostics is strictly READ-ONLY (no lifecycle writes); manager is
+# the least-privilege role that can read the whole fleet's stats.
+hassio_api: true
+hassio_role: manager
+
+# Default options written to /data/options.json; `schema` validates user overrides.
+# service_token / user_signing_key are the gateway-auth shared secrets (must match the BFF); listed
+# in `options` with empty defaults so the HA Configuration UI renders them (schema-only fields hide
+# behind "Show optional"). The entrypoint fails fast if either is left empty — never a baked secret.
+options:
+  log_level: info
+  # How often the background loop samples metrics and appends a history point.
+  sample_interval_seconds: 60
+  # How long to keep sampled history points (for the trend sparklines).
+  history_retention_days: 7
+  # Opt-in: also read HA entity states for battery-<15% / house-temperature signals. OFF by default
+  # to keep diagnostics focused on the appliance itself (device data is device-manager territory).
+  enable_ha_battery_collector: false
+  service_token: ""
+  user_signing_key: ""
+schema:
+  log_level: list(debug|info|warning|error)?
+  sample_interval_seconds: int?
+  history_retention_days: int?
+  enable_ha_battery_collector: bool?
+  service_token: password?
+  user_signing_key: password?
+
+# Persistent per-add-on storage for the short metric-history series (Decision #7: the add-on owns
+# only its own derived data). `ssl:ro` lets the cert-expiry collector read the front-door cert's
+# notAfter as a fallback when the TLS probe can't reach it.
+map:
+  - app_config:rw
+  - ssl:ro
