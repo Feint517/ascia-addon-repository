@@ -1,0 +1,71 @@
+# Home Assistant add-on manifest for ascia-analytics.
+# Supervisor reads this to install, configure, and run the add-on.
+#
+# ascia-analytics is the energy/history analytics add-on (spec Module 11, P1). It subscribes to HA
+# power-sensor state changes, stores them in its OWN tiered SQLite time-series (raw -> hourly),
+# classifies each entity into an energy role (load / solar / grid / battery / house), and serves the
+# derived consumption, top-consumers, and distribution-flow views the Monitoring Energy tab renders.
+# HA is only the sensor bus; ASCIA owns the memory + the intelligence (see docs / spec Module 11).
+name: ASCIA Analytics
+slug: ascia_analytics
+version: "0.1.2111"
+description: >-
+  Energy analytics: per-device/zone consumption, top consumers, and the solar/grid/battery/house
+  distribution flow — from ASCIA's own tiered time-series over HA power sensors. Local-first.
+arch:
+  - amd64
+  - aarch64
+
+# Decision #8: Supervisor PULLS a prebuilt image from our registry; it never builds from this
+# folder. {arch} is templated by Supervisor. CI rewrites the patch version at publish time.
+# TODO(org-transfer): flip ghcr.io/feint517 -> ghcr.io/ascia when the repo moves to the org.
+image: "ghcr.io/feint517/{arch}-ascia-analytics"
+
+# ascia-base inherits HA's S6 /init as PID 1 and we ship our own S6 service (see rootfs), so
+# Supervisor must NOT inject its own init.
+init: false
+
+# Zero-touch provisioning (Phase 3): ascia-provisioning is the fleet's sole starter. This add-on
+# stays stopped on a fresh image until the operator injects the shared secret, then the operator
+# starts it and flips it to boot: auto — so it can't crash-loop before the secret exists.
+boot: manual
+
+# Internal API only — reached through the ascia-frontend BFF (single origin), not exposed directly.
+# Port census: vpn 8120, 3d-engine 8121, backup 8122, security 8123, device-manager 8124,
+# provisioning 8125, network-manager 8126, diagnostics 8127, analytics 8128.
+ports:
+  8128/tcp: null
+ports_description:
+  8128/tcp: ASCIA Analytics API (internal; proxied by the ascia-frontend BFF)
+
+# HA Core API proxy (http://supervisor/core/api + ws) via SUPERVISOR_TOKEN — the SDK's HAClient
+# uses it to subscribe to power-sensor state_changed events and read the area registry (for
+# group-by-zone). Read-only; analytics never calls a service.
+homeassistant_api: true
+
+# Default options written to /data/options.json; `schema` validates user overrides.
+# service_token / user_signing_key are the gateway-auth shared secrets (must match the BFF); listed
+# in `options` with empty defaults so the HA Configuration UI renders them. The entrypoint fails
+# fast if either is left empty — never a baked secret.
+options:
+  log_level: info
+  # Debounce cadence: at most one stored sample per entity per this many seconds (bounds writes).
+  sample_interval_seconds: 60
+  # Raw high-resolution samples are kept this long, then only the hourly rollups remain.
+  raw_retention_days: 14
+  # Hourly rollups (the workhorse for day/week/month/year) are kept this long.
+  history_retention_days: 365
+  service_token: ""
+  user_signing_key: ""
+schema:
+  log_level: list(debug|info|warning|error)?
+  sample_interval_seconds: int?
+  raw_retention_days: int?
+  history_retention_days: int?
+  service_token: password?
+  user_signing_key: password?
+
+# Persistent per-add-on storage for the tiered energy time-series (Decision #7: the add-on owns
+# only its own derived data — never another add-on's DB or HA's recorder).
+map:
+  - app_config:rw
