@@ -1,0 +1,72 @@
+# Home Assistant add-on manifest for ascia-backup.
+# Supervisor reads this to install, configure, and run the add-on.
+#
+# Design: see ../../../ascia-docs/design/ascia-backup.md
+# API contract: see ../../../ascia-docs/api/ascia-backup.openapi.yaml
+name: ASCIA Backup
+slug: ascia_backup
+# 0.3.0: the scheduler now catches up windows missed while the box was off (a missed
+# window used to be skipped permanently and silently), /status exposes backup_overdue,
+# and the schedule adopts the HOST's timezone instead of a hardcoded America/Toronto.
+version: "0.3.2121"
+description: >-
+  Trustworthy-by-default backup layer over HA Supervisor: scheduled automatic backups,
+  retention policy, AES-256-GCM encryption at rest, USB off-site replication, integrity
+  verification, and forced pre-restore safety. The homeowner-facing layer the BFF surfaces
+  in the dashboard's backup status widget.
+arch:
+  - amd64
+  - aarch64
+
+# Decision #8: Supervisor PULLS a prebuilt image from our private registry; it never builds
+# from this folder. {arch} is templated by Supervisor. The CI's version-rewrite policy
+# overwrites the version line above with `0.1.<run_number>` at publish time so Supervisor
+# reliably sees "Update available" on every meaningful build.
+# TODO(org-transfer): flip ghcr.io/feint517 -> ghcr.io/ascia when the repo moves to the org.
+image: "ghcr.io/feint517/{arch}-ascia-backup"
+
+# ascia-base inherits HA's S6 /init as PID 1, and we ship our own S6 service (see rootfs),
+# so Supervisor must NOT inject its own init.
+init: false
+
+# Zero-touch provisioning (Phase 3): ascia-provisioning is the fleet's sole starter. This add-on
+# stays stopped on a fresh image until the operator injects the shared secret, then the operator
+# starts it and flips it back to boot: auto — so it can't crash-loop before the secret exists.
+# See ../../docs/ZERO_TOUCH_PROVISIONING_PLAN.md (Phase 3); the operator itself is boot: auto.
+boot: manual
+
+# Internal API only — reached through the ascia-frontend BFF (single origin), not exposed
+# directly. The BFF authenticates the user once at the edge and forwards calls here.
+# Each ASCIA add-on owns a UNIQUE port (this one 8122) so nothing contends on the host
+# (device-manager runs host_network). null = not published on the host; for direct dev access from
+# the Mac, map a host port in the add-on's Configuration → Network section (see docs/HAOS_VM.md).
+ports:
+  8122/tcp: null
+ports_description:
+  8122/tcp: ASCIA Backup API (internal; proxied by the ascia-frontend BFF)
+
+# Supervisor API access — needed for the backup REST endpoints (create_backup, list_backups,
+# restore_backup, delete_backup). The `admin` role is required for create/restore/delete;
+# read-only API access wouldn't be enough.
+hassio_api: true
+hassio_role: admin
+
+# Persistent per-add-on storage for state.json (schedule, retention, target list, last-run
+# times) and key.bin (the AES-256-GCM master key). PLUS access to /backup so we can encrypt
+# the tarballs Supervisor writes there and copy them to off-site targets.
+map:
+  - app_config:rw
+  - backup:rw
+
+# Default options + schema. service_token / user_signing_key are shared with the BFF.
+# They're listed in `options` with empty-string defaults so the HA Configuration UI renders
+# them by default (HA hides schema-only fields behind a "Show optional" link, easy to miss).
+# We never ship a hardcoded secret — the entrypoint fails fast if either is left empty.
+options:
+  log_level: info
+  service_token: ""
+  user_signing_key: ""
+schema:
+  log_level: list(debug|info|warning|error)?
+  service_token: password?
+  user_signing_key: password?

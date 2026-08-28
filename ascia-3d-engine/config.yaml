@@ -1,0 +1,66 @@
+# Home Assistant add-on manifest for ascia-3d-engine.
+# Supervisor reads this to install, configure, and run the add-on.
+name: ASCIA 3D Engine
+slug: ascia_3d_engine
+# 0.3.0: corrective re-release. The previously-published manifest drifted to ports: 8099 while the
+# image shipped ASCIA_PORT=8121 (the pre-run-number "stuck tag" trap), so Supervisor mapped a dead
+# host port. Source has always been consistent (config + Dockerfile = 8121, enforced by
+# lint-addons.sh); this bump forces CI to republish a fresh, higher version with image AND manifest
+# both on 8121, so Supervisor sees the update and offers 8121 in Configuration → Network.
+version: "0.3.2121"
+description: >-
+  Server-side 3D scene state + entity↔3D mapping for the live 3D home dashboard.
+  Owns the GLB model, per-device anchors, classification + visual semantics, and the
+  WebSocket subscribe channel that powers the frontend's live updates.
+arch:
+  - amd64
+  - aarch64
+
+# Decision #8: Supervisor PULLS a prebuilt image from our private registry.
+# {arch} is templated by Supervisor.
+# TODO(org-transfer): flip ghcr.io/feint517 -> ghcr.io/ascia when the repo moves to the org.
+image: "ghcr.io/feint517/{arch}-ascia-3d-engine"
+
+# ascia-base inherits HA's S6 /init as PID 1, and we ship our own S6 service (see rootfs).
+init: false
+
+# Zero-touch provisioning (Phase 3): ascia-provisioning is the fleet's sole starter. This add-on
+# stays stopped on a fresh image until the operator injects the shared secret, then the operator
+# starts it and flips it back to boot: auto — so it can't crash-loop before the secret exists.
+# See ../../docs/ZERO_TOUCH_PROVISIONING_PLAN.md (Phase 3); the operator itself is boot: auto.
+boot: manual
+
+# Internal API only — reached through the ascia-frontend BFF (single origin), never exposed on a
+# host port. The BFF authenticates the user once at the edge and forwards calls here. Each ASCIA
+# add-on owns a UNIQUE port (this one 8121) so nothing contends on the host (device-manager 8124
+# runs host_network). null = not published on the host; for direct dev access from the Mac, map a
+# host port in the add-on's Configuration → Network section.
+ports:
+  8121/tcp: null
+ports_description:
+  8121/tcp: ASCIA 3D Engine API (internal; proxied by the ascia-frontend BFF)
+
+# HA Core API proxy (REST + WS via SUPERVISOR_TOKEN — what the SDK's HAClient uses).
+homeassistant_api: true
+# Supervisor API (addon info, future backup integration, etc.).
+hassio_api: true
+hassio_role: default
+
+# Default options + schema. service_token / user_signing_key are shared with the BFF.
+# They're listed in `options` with empty-string defaults so the HA Configuration UI renders
+# them by default (HA hides schema-only fields behind a "Show optional" link, which is easy
+# to miss). The entrypoint still fails fast if either is left empty — we never ship a
+# hardcoded secret, we just make the input field visible.
+options:
+  log_level: info
+  service_token: ""
+  user_signing_key: ""
+schema:
+  log_level: list(debug|info|warning|error)?
+  service_token: password?
+  user_signing_key: password?
+
+# Persistent per-add-on storage for the GLB model file(s), per-device anchors config, and any
+# derived state we want to survive restarts.
+map:
+  - app_config:rw

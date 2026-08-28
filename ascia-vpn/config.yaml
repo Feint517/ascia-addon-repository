@@ -1,0 +1,102 @@
+# Home Assistant add-on manifest for ascia-vpn.
+# Supervisor reads this to install, configure, and run the add-on.
+#
+# Design + roadmap: see ../../docs/VPN_MVP_ROADMAP.md (parked — read ../../docs/VPN_RESUME_HERE.md first)
+# API contract: ../../../ascia-docs/api/ascia-vpn.openapi.yaml
+name: ASCIA VPN
+slug: ascia_vpn
+# 0.3.0: readiness semantics changed — an unconfigured add-on now reports HEALTHY
+# (remote access is optional and off, not broken) and parks the NetBird daemon instead
+# of letting it re-dial a persisted enrollment forever. See ../../docs/VPN_RESUME_HERE.md.
+version: "0.3.2121"
+description: >-
+  Secure remote access via a self-hosted NetBird overlay. The agent dials OUT to the
+  ASCIA management plane — no exposed ports, no router config, CGNAT-proof. Per-user
+  profiles with one-shot enrollment, time-boxed technician sessions, and a
+  least-privilege ACL (each device reaches only the home, never other devices).
+arch:
+  - amd64
+  - aarch64
+
+# Decision #8: Supervisor PULLS a prebuilt image from our private registry; it never builds
+# from this folder. {arch} is templated by Supervisor.
+# TODO(org-transfer): flip ghcr.io/feint517 -> ghcr.io/ascia when the repo moves to the org.
+image: "ghcr.io/feint517/{arch}-ascia-vpn"
+
+# ascia-base inherits HA's S6 /init as PID 1, and we ship our own S6 services (see rootfs),
+# so Supervisor must NOT inject its own init.
+init: false
+
+# Zero-touch provisioning (Phase 3): ascia-provisioning is the fleet's sole starter. This add-on
+# stays stopped on a fresh image until the operator injects the shared secret, then the operator
+# starts it and flips it back to boot: auto — so it can't crash-loop before the secret exists.
+# See ../../docs/ZERO_TOUCH_PROVISIONING_PLAN.md (Phase 3); the operator itself is boot: auto.
+boot: manual
+
+# Internal API only — reached through the ascia-frontend BFF (single origin), not exposed
+# directly. There is NO inbound VPN port in agent mode: the NetBird agent establishes the
+# overlay by dialing OUT to the management/signal/relay plane, so nothing here needs to be
+# port-forwarded. (The parked advanced self-host path would re-introduce a UDP listener; it
+# is not shipped in this image.)
+#
+# Why a distinctive port: host_network: true puts this container on the HAOS host's
+# network namespace, so we compete with everything else on that host for ports. The
+# fleet took the 812x range for exactly that reason (vpn 8120, engine 8121, backup 8122,
+# security 8123, device-manager 8124, provisioning 8125, network-manager 8126,
+# diagnostics 8127, analytics 8128; the front door is 8080). The BFF dials host:8120
+# for VPN routes.
+ports:
+  8120/tcp: null
+ports_description:
+  8120/tcp: ASCIA VPN API (internal; proxied by the ascia-frontend BFF)
+
+# Host network mode: the agent creates and manages the overlay (WireGuard) interface on the
+# HOST's namespace, not the container's, so overlay routing reaches HA + the other add-ons.
+# Spec: only ascia-vpn breaks the unprivileged-container pattern. All other ASCIA add-ons
+# (backup, engine, device-manager) are normal containers.
+host_network: true
+
+# Capabilities the NetBird agent needs (matches the upstream client container, minus BPF
+# which Supervisor's allow-list doesn't expose — eBPF-only features degrade gracefully):
+#   NET_ADMIN → create/modify the overlay interface, routes, and NAT/iptables rules
+#   NET_RAW   → raw sockets for ICMP reachability + low-level packet handling
+privileged:
+  - NET_ADMIN
+  - NET_RAW
+
+# The overlay (WireGuard) interface needs the TUN device.
+devices:
+  - /dev/net/tun
+
+# Persistent per-add-on storage. The agent's device key + enrollment live in
+# /data/netbird/ (the /data volume survives image UPDATES — only an uninstall-with-delete
+# wipes it), so the home keeps its overlay identity across upgrades instead of re-enrolling
+# and orphaning peers. state.json (profiles, sessions, audit) also lives in /data.
+map:
+  - app_config:rw
+
+# Default options + schema.
+#   service_token / user_signing_key — shared gateway-auth secrets (same pair as the BFF).
+#   setup_key / management_url        — agent enrollment (mint the key on the mgmt plane).
+#   management_api_token              — PAT for control-plane ops (profiles, sessions, ACL).
+#   advanced_self_host / public_endpoint — the parked v1 kernel-WireGuard path (expert-only).
+# All secrets default to empty string so the HA Configuration UI renders the fields; the
+# entrypoint fails fast (auth secrets) or surfaces "setup required" (enrollment) when blank.
+options:
+  log_level: info
+  service_token: ""
+  user_signing_key: ""
+  setup_key: ""
+  management_url: ""
+  management_api_token: ""
+  advanced_self_host: false
+  public_endpoint: ""
+schema:
+  log_level: list(debug|info|warning|error)?
+  service_token: password?
+  user_signing_key: password?
+  setup_key: password?
+  management_url: str?
+  management_api_token: password?
+  advanced_self_host: bool?
+  public_endpoint: str?

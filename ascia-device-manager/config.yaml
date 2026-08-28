@@ -1,0 +1,94 @@
+# Home Assistant add-on manifest for ascia-device-manager.
+# Supervisor reads this to install, configure, and run the add-on.
+name: ASCIA Device Manager
+slug: ascia_device_manager
+version: "0.3.2121"
+description: >-
+  Auto-discovers, onboards, names, and zone-assigns devices across protocols
+  (Zigbee/Z2M, ONVIF/RTSP, Wi-Fi mDNS/SSDP, PoE via Omada). v0 exposes GET /devices.
+arch:
+  - amd64
+  - aarch64
+
+# Decision #8: Supervisor PULLS a prebuilt image from our private registry; it never builds
+# from this folder. {arch} is templated by Supervisor. The local dev loop uses a sync script /
+# devcontainer mount instead.
+# TODO(org-transfer): flip ghcr.io/feint517 -> ghcr.io/ascia when the repo moves to the org;
+#   align tag with `version` above.
+image: "ghcr.io/feint517/{arch}-ascia-device-manager"
+
+# ascia-base inherits HA's S6 /init as PID 1, and we ship our own S6 service (see rootfs),
+# so Supervisor must NOT inject its own init.
+init: false
+
+# Zero-touch provisioning (Phase 3): ascia-provisioning is the fleet's sole starter. This add-on
+# stays stopped on a fresh image until the operator injects the shared secret, then the operator
+# starts it and flips it back to boot: auto — so it can't crash-loop before the secret exists.
+# See ../../docs/ZERO_TOUCH_PROVISIONING_PLAN.md (Phase 3); the operator itself is boot: auto.
+boot: manual
+
+# Internal API only — reached through the ascia-frontend BFF (single origin), not exposed
+# directly. No Ingress here; the BFF owns Ingress (decision #5).
+# TODO(networking): confirm whether to expose a host port at all, or keep it cluster-internal.
+ports:
+  8124/tcp: null
+ports_description:
+  8124/tcp: ASCIA Device Manager API (internal; proxied by the ascia-frontend BFF)
+
+# Wi-Fi discovery (mDNS/SSDP) needs multicast on the home LAN, which requires the add-on to share
+# the host network namespace. With host_network the API listens on 8124 (moved off the historical
+# 8099, which a non-ASCIA host process was holding), now on the host.
+host_network: true
+
+# Grants access to the HA Core API proxy (http://supervisor/core/api) via SUPERVISOR_TOKEN —
+# this is what the SDK's HAClient uses.
+homeassistant_api: true
+# Grants access to the Supervisor API (add-on info, MQTT service discovery, snapshots).
+hassio_api: true
+hassio_role: default
+
+# Declares we *want* the MQTT service so Supervisor exposes broker discovery
+# (GET /services/mqtt). "want" = optional: the add-on still runs if no MQTT broker exists,
+# and the Zigbee discovery routes degrade to 502 until one is available.
+services:
+  - mqtt:want
+
+# Default options written to /data/options.json; `schema` validates user overrides.
+# service_token / user_signing_key are the gateway-auth shared secrets (must match the BFF).
+# They're listed in `options` with empty-string defaults so the HA Configuration UI renders
+# them by default (HA hides schema-only fields behind a "Show optional" link, easy to miss).
+# We never ship a hardcoded secret — the entrypoint fails fast if either is left empty.
+options:
+  log_level: info
+  discovery_enabled: true
+  discovery_service_types: []
+  onvif_username: ""
+  onvif_password: ""
+  omada_enabled: true
+  omada_url: ""
+  omada_id: ""
+  omada_client_id: ""
+  omada_client_secret: ""
+  omada_site: ""
+  service_token: ""
+  user_signing_key: ""
+schema:
+  log_level: list(debug|info|warning|error)?
+  discovery_enabled: bool?
+  discovery_service_types:
+    - str
+  onvif_username: str?
+  onvif_password: password?
+  omada_enabled: bool?
+  omada_url: str?
+  omada_id: str?
+  omada_client_id: str?
+  omada_client_secret: password?
+  omada_site: str?
+  service_token: password?
+  user_signing_key: password?
+
+# Persistent per-add-on storage for derived data (decision #7: HA owns entity state; the
+# add-on owns only its own derived/aggregate data).
+map:
+  - app_config:rw
