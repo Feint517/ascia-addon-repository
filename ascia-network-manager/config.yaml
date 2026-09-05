@@ -1,0 +1,84 @@
+# Home Assistant add-on manifest for ascia-network-manager.
+# Supervisor reads this to install, configure, and run the add-on.
+#
+# Phase 1 (topology-agnostic): network self-awareness, connectivity/outage health, passive device
+# sightings, address-change history + weekly report, and IP-change RESILIENCE (detect a DHCP move,
+# re-announce ascia.local). Includes an opt-in, admin-gated guided static-IP flow. The
+# hardware-gated capabilities (VLAN / firewall / DHCP / DNS / IDS / Omada / UniFi) are declared as
+# capability-reporting seams and land in later phases. See docs/ and the ARCHITECTURE overview.
+name: ASCIA Network Manager
+slug: ascia_network_manager
+version: "0.1.2146"
+description: >-
+  Network self-awareness, connectivity health, device visibility, and IP-change resilience
+  (survives DHCP moves via ascia.local). Opt-in guided static-IP. VLAN/firewall/DHCP/DNS/Omada
+  are capability-gated seams for later phases.
+arch:
+  - amd64
+  - aarch64
+
+# Decision #8: Supervisor PULLS a prebuilt image from our registry; it never builds from this
+# folder. {arch} is templated by Supervisor. CI rewrites the patch version at publish time.
+# TODO(org-transfer): flip ghcr.io/feint517 -> ghcr.io/ascia when the repo moves to the org.
+image: "ghcr.io/feint517/{arch}-ascia-network-manager"
+
+# ascia-base inherits HA's S6 /init as PID 1 and we ship our own S6 service (see rootfs), so
+# Supervisor must NOT inject its own init.
+init: false
+
+# Zero-touch provisioning (Phase 3): ascia-provisioning is the fleet's sole starter. This add-on
+# stays stopped on a fresh image until the operator injects the shared secret, then the operator
+# starts it and flips it to boot: auto — so it can't crash-loop before the secret exists.
+boot: manual
+
+# Internal API only — reached through the ascia-frontend BFF (single origin), not exposed directly.
+ports:
+  8126/tcp: null
+ports_description:
+  8126/tcp: ASCIA Network Manager API (internal; proxied by the ascia-frontend BFF)
+
+# Share the host network namespace. Phase 1 reads/writes host network config via the Supervisor
+# API (which needs hassio_role: admin, below), but host_network also lets future control planes
+# observe the LAN directly (SNMP switch path, ping/ARP peer view) without re-plumbing — and it
+# gives the front door a stable gateway-IP:8126 route (172.30.32.1). Same choice as device-manager.
+host_network: true
+
+# HA Core API proxy (http://supervisor/core/api) via SUPERVISOR_TOKEN — the SDK's HAClient uses it
+# to read the device registry for the connected-devices view (consume, don't re-discover).
+homeassistant_api: true
+# Supervisor API. `admin` (not `manager`) because the network endpoints
+# (GET /network/info, POST /network/interface/{iface}/update, POST /network/reload) are host-level,
+# gated behind the admin role — same reason ascia-provisioning holds admin for the host hostname API.
+hassio_api: true
+hassio_role: admin
+
+# We *want* MQTT so Supervisor exposes broker discovery (GET /services/mqtt). "want" = optional:
+# the add-on still runs with no broker; it just can't publish ascia/network/# events until one exists.
+services:
+  - mqtt:want
+
+# Default options written to /data/options.json; `schema` validates user overrides.
+# service_token / user_signing_key are the gateway-auth shared secrets (must match the BFF); listed
+# in `options` with empty defaults so the HA Configuration UI renders them (schema-only fields hide
+# behind "Show optional"). The entrypoint fails fast if either is left empty — never a baked secret.
+options:
+  log_level: info
+  reconcile_interval_seconds: 300
+  # Opt-in gate for the guided static-IP write path (the SELF_ADDRESS capability). Left OFF by
+  # default: DHCP + ascia.local mDNS is the product default. A pilot/installer flips this on to let
+  # an admin pin the box's address from the app (pool-safe suggestion + auto-rollback). Never
+  # auto-applies a static IP; the reconcile loop only ever OBSERVES and re-announces the name.
+  allow_static_ip: false
+  service_token: ""
+  user_signing_key: ""
+schema:
+  log_level: list(debug|info|warning|error)?
+  reconcile_interval_seconds: int?
+  allow_static_ip: bool?
+  service_token: password?
+  user_signing_key: password?
+
+# Persistent per-add-on storage for derived data (network history, device sightings, the last-applied
+# static config for rollback). Decision #7: HA owns entity state; the add-on owns only its own data.
+map:
+  - app_config:rw

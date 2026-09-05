@@ -1,0 +1,200 @@
+# Home Assistant add-on manifest for the ASCIA front door (the SvelteKit BFF).
+#
+# Plan: see ../../docs/C6B_BFF_AND_SECURITY_PLAN.md
+# Deploy/validate on the HAOS VM: see ./docs/C6B4_DEPLOY_RUNBOOK.md (C6b.4).
+name: ASCIA
+slug: ascia_frontend
+# 0.17.0: password recovery screens (R2).
+#
+# /recover, public — the audience is by definition unable to sign in, so guarding it behind a login
+# would guard it against exactly the people who need it. It grants nothing on its own: every
+# refusal lives on the appliance, and the proof of presence is an unclean power loss the front door
+# cannot fake.
+#
+# ONE route, three states, driven by what the appliance reports rather than by a URL or client
+# state. That is not tidiness: the customer has to CUT POWER partway through, so they may well come
+# back on a different device, and anything remembered on this side would be gone.
+#
+# The waiting screen says "unplug it" and says explicitly that a restart from a menu will not work.
+# A customer who tries the wrong kind of restart and sees nothing happen concludes the feature is
+# broken, not that they used the wrong gesture.
+#
+# 0.16.0: guards the `bashio::config` "null" trap on `mapbox_token`.
+#
+# `bashio::config` returns the literal string "null" for a key ABSENT from options, not an empty
+# string. That value is truthy, so a cleared token made the BFF report Mapbox as the provider,
+# credit Mapbox in the attribution, and send every tile request with an invalid token — 401, grey
+# squares, and the CARTO fallback skipped, because that code only asks whether a token is set.
+# Same family as the SSL_CERTFILE="/ssl/" defect below: an empty read producing a plausible value.
+# The option itself is now written by ascia-provisioning 0.15.0.
+#
+# 0.5.1: waits for the Supervisor API before reading its config.
+#
+# Every bashio::config call is a Supervisor API call. On the boot after an OS update Supervisor is
+# not necessarily answering yet, so every read returned empty, SSL_CERTFILE became the bare string
+# "/ssl/" (a directory), cert generation failed, and the front door exec'd into PLAIN HTTP for the
+# life of the container -- with no retry. Two harms: the household was served plaintext silently,
+# and ascia-probation health-checks over HTTPS, so it saw 000 for the whole 30-minute window and
+# would have auto-reverted a healthy OS as "failed probation". Observed on 26.1.18; the next
+# OS-update boot did not reproduce it, which is what makes it dangerous -- it is a race.
+#
+# It now waits up to 300s and, if Supervisor never arrives, exits so `finish` halts the container
+# and Supervisor restarts it. An add-on that cannot reach Supervisor at boot is EARLY, not broken,
+# and starting degraded is worse than retrying.
+#
+# 0.5.0: the update surface gains the CADENCE control (5.7c) and RELEASE NOTES (5.7b).
+#
+# 15.3 asks for a manual mode plus a programmable weekly/monthly/annual one; until now the only
+# controls were two add-on options a customer could never see. The page now reads and writes
+# ascia-provisioning's policy through /api/update-policy — reading is open to the household,
+# changing it is admin, and the wording ("every Sunday at 03:00") comes from the appliance rather
+# than being re-derived here, so the two cannot drift. An automatic cadence states plainly that the
+# appliance restarts inside its window, and a cadence that has been DECLINING its window says so
+# rather than looking identical to one with nothing to do.
+#
+# Release notes are shown before installing, rendered as text and never as markup, read from
+# plan.notes so a release held back by min_from cannot show the wrong release's notes. A withheld
+# update now renders as "Update held back" with its reason and no install control, instead of
+# reporting "Up to date" while sitting on a downloaded update it was refusing.
+#
+# 0.4.1: the `ha_base_url` fallback becomes port 80. Core 2026.8.x defaults to 80 under Supervisor
+# and keeps 8123 alive only as a 307 redirect that is torn down when onboarding completes — so the
+# old 8123 fallback worked during setup and would have died afterwards. See the option's comment.
+#
+# 0.4.0: adds `provisioning_base_url`, so the appliance can actually reach the operator. Step 6's
+# updates page proxies to ascia-provisioning, but no option existed for its URL and nothing
+# resolved it — /settings/updates answered 500 on a real box while dev and CI passed, because both
+# set PROVISIONING_BASE_URL directly. `ha_base_url` is now a fallback too: the operator overwrites
+# it with the port Supervisor reports Core is on, instead of everyone assuming 8123.
+#
+# 0.3.0: the ASCIA PKI lands. ascia-provisioning now owns the certificate — it signs a leaf with
+# this appliance's own root CA — and the front door serves that root at /ascia-ca.pem with a
+# per-platform walkthrough at /setup/secure, so a device that trusts it once gets a real padlock
+# instead of "Not Secure". Renewals are hot-swapped without a restart. Expect ONE last warning per
+# client while it is trusted.
+version: "0.17.2146"
+description: >-
+  The ASCIA front door — the web app the household uses. ASCIA's own login drives Home Assistant's
+  auth behind the scenes; the BFF mints the signed X-Ascia-User and proxies every backend add-on
+  under one HTTPS origin. The one ASCIA add-on exposed on the LAN.
+arch:
+  - amd64
+  - aarch64
+
+# Decision #8: Supervisor PULLS a prebuilt image; CI rewrites the version at publish time.
+# TODO(org-transfer): ghcr.io/feint517 -> ghcr.io/ascia.
+image: "ghcr.io/feint517/{arch}-ascia-frontend"
+
+# We ship our own S6 service (see rootfs) on top of the HA base, so Supervisor must not inject init.
+init: false
+
+# Zero-touch provisioning (Phase 3): ascia-provisioning is the fleet's sole starter. The front door
+# stays stopped on a fresh image until the operator pushes its topology + secrets, then the operator
+# starts it and flips it back to boot: auto — so it can't come up unconfigured before the operator
+# runs. See ../../docs/ZERO_TOUCH_PROVISIONING_PLAN.md (Phase 3); the operator itself is boot: auto.
+boot: manual
+
+# The front door is EXPOSED on the LAN. It runs `host_network` (like device-manager + vpn) so the
+# node server binds :8080 on the HOST directly — dual-stack (IPv4 + IPv6) — instead of a bridged
+# published port. A bridged published port goes through docker's userland IPv6 proxy, which RESETS
+# IPv6 connections; clients that prefer IPv6 for `ascia.local` then can't reach the UI. Binding the
+# host directly (HOST=:: in the run script) serves every client on whichever stack it picks, exactly
+# like HA Core. The `ports:` key stays for documentation but is unpublished (`null`) — publishing is
+# a no-op under host_network anyway.
+host_network: true
+ports:
+  8080/tcp: null
+ports_description:
+  8080/tcp: ASCIA web app (HTTPS; bound on the host via host_network)
+
+# HTTPS termination: the server reads the cert/key named by the certfile/keyfile options below
+# from /ssl (HA's standard ssl-add-on convention). `ssl: true` advertises SSL support, but it is
+# the `ssl:rw` entry in `map:` that actually bind-mounts /ssl into the container — without it the
+# server crashes with ENOENT on /ssl/<certfile> (pinned during C6b.4 VM validation).
+ssl: true
+
+# Folders bind-mounted into the container.
+#   app_config:rw — persistent per-add-on storage (currently unused; reserved).
+#   ssl:rw          — read AND write the TLS cert/key in /ssl. `rw` (not `ro`) so the run script can
+#                     first-boot-generate a self-signed cert (SAN DNS:ascia.local) when none exists.
+map:
+  - app_config:rw
+  - ssl:rw
+
+# All server-only config. service_token / user_signing_key MUST match the values on the backend
+# add-ons. The *_base_url values point at the other add-ons; the exact reachable hostnames are
+# pinned during VM validation (C6b.4) — device_manager (host_network) is reached at the host
+# gateway IP, the bridged add-ons by hostname.
+options:
+  log_level: info
+  certfile: fullchain.pem
+  keyfile: privkey.pem
+  # The appliance root CA published by ascia-provisioning. Served (public half only) at
+  # /ascia-ca.pem so devices can trust this appliance — see /setup/secure.
+  cafile: ascia-ca.pem
+  service_token: ""
+  user_signing_key: ""
+  session_secret: ""
+  mapbox_token: ""
+  # A FALLBACK, not the source of truth. ascia-provisioning overwrites this every reconcile pass
+  # with the port Supervisor reports Core is actually on (`GET /core/info`).
+  #
+  # 80, not 8123. Root-caused 2026-08-16 in Core 2026.8.x `components/http/config.py`:
+  #
+  #     default = SUPERVISOR_DEFAULT_PORT if ENV_SUPERVISOR in os.environ else SERVER_PORT
+  #
+  # Core's default HTTP port is **80 whenever it runs under Supervisor** (8123 is now only the
+  # non-Supervisor default). This add-on is only ever a Supervisor add-on, so 80 is the correct
+  # guess here and 8123 is the wrong one.
+  #
+  # 8123 is not merely stale — it is a TRAP. Core keeps a legacy-port redirect on 8123 that 307s to
+  # 80, but `_async_manage_port_transition` tears it down **the moment onboarding completes**. So
+  # 8123 answers during setup and then vanishes: a box that worked all through installation would
+  # break later, with nothing to connect the failure to. (Core also persists the resolved port into
+  # `.storage/http` with `yaml_migration_done: true` on first boot, which is why editing
+  # `http: server_port:` in configuration.yaml afterwards has no effect.)
+  ha_base_url: "http://homeassistant:80"
+  security_base_url: "http://ascia_security:8123"
+  device_manager_base_url: ""
+  backup_base_url: "http://ascia_backup:8122"
+  vpn_base_url: ""
+  network_manager_base_url: ""
+  diagnostics_base_url: "http://ascia_diagnostics:8127"
+  analytics_base_url: "http://ascia_analytics:8128"
+  # Resolved by ascia-provisioning like every other backend. Empty by default because
+  # an unprovisioned box has no operator to proxy to, and the updates page should say
+  # so honestly rather than point at a guess.
+  provisioning_base_url: ""
+  engine_base_url: "http://ascia_3d_engine:8121"
+  # Max request body adapter-node accepts (GLB model uploads go through here). adapter-node
+  # defaults to 512K, which 413s any real 3D model — raise it. Units: K/M/G, or Infinity to disable.
+  body_size_limit: "256M"
+schema:
+  log_level: list(debug|info|warning|error)?
+  certfile: str
+  keyfile: str
+  cafile: str?
+  service_token: password?
+  user_signing_key: password?
+  session_secret: password?
+  ha_base_url: str
+  security_base_url: str
+  device_manager_base_url: str?
+  backup_base_url: str
+  vpn_base_url: str?
+  network_manager_base_url: str?
+  diagnostics_base_url: str?
+  analytics_base_url: str?
+  provisioning_base_url: str?
+  # Mapbox access token for the basemaps. **Written by ascia-provisioning** since its 0.15.0 — it
+  # owns every credential ASCIA delivers (see ascia-docs / docs/CREDENTIALS.md, Vendor register), so
+  # this is a value to READ here, not one to set by hand. A token set by hand is adopted by the
+  # operator on its next pass rather than overwritten, so an already-configured box keeps working.
+  #
+  # Optional: without it the appliance falls back to CARTO's keyless tiles, which now carry an
+  # "API KEY REQUIRED" stamp, and place search is unavailable. `password?` so Supervisor masks it
+  # in the UI — it is a billable credential, even though it never leaves the appliance (the browser
+  # fetches tiles from the front door, never from Mapbox).
+  mapbox_token: password?
+  engine_base_url: str
+  body_size_limit: str?

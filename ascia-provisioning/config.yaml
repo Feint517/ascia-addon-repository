@@ -1,0 +1,266 @@
+# Home Assistant add-on manifest for ascia-provisioning — the zero-touch fleet operator.
+#
+# Plan: see ../../docs/ZERO_TOUCH_PROVISIONING_PLAN.md
+name: ASCIA Provisioning
+slug: ascia_provisioning
+# 0.18.1: the arming record is FSYNCED. Without this, recovery could not work at all.
+#
+# Found on hardware, not in review. The proof of presence IS an unclean power loss, so armed.json
+# is written and then the machine is switched off at the wall seconds later. `Path.write_text`
+# gives no durability guarantee: the record sat in the page cache, Linux flushes dirty pages on a
+# ~30s timer, and the cut took it. Armed 17:59:12, power cut 17:59:22, and the shim logged "power
+# was lost, but no reset had been requested". Ten seconds.
+#
+# The appliance behaved perfectly and recovery was impossible -- the worst shape a bug can take.
+# The host shim already syncs before its rename; this carries that discipline into Python. The
+# directory is fsynced too, since a rename is only durable once its directory entry is on disk.
+#
+# 0.18.0: password recovery, the add-on half (R2).
+#
+# Five routes under /recovery, all reachable with the service token and NO user -- nobody can sign
+# in, which is the whole situation. None grants anything alone, so the ORDER of the checks is the
+# design: /recovery/claim verifies the WINDOW before the CODE, because checking the code first
+# would let anyone on the LAN burn the five attempts and lock out the owner standing at the
+# appliance having just cut the power.
+#
+# This add-on cannot reset a password in this design. It writes into its own private /data and the
+# host shim acts -- the host being the only component that can see an unclean power loss. NOT
+# /share: the customer's new password crosses this channel and /share is readable by every add-on
+# that asks for share:rw.
+#
+# verify_code() is now shared with first-run rather than reimplemented: the same code, the same
+# five-attempt lockout, the same persisted counter. A second implementation would be a second
+# lockout, and the one an attacker finds is whichever was written with less care.
+#
+# ⚠️ Honest limit, recorded as #41: this add-on holds hassio_role: admin for hostname pinning, so a
+# COMPROMISED operator resets passwords directly and R2 does not contain it. It defends against
+# someone on the LAN holding a photograph of the label.
+#
+# 0.17.0: an appliance can be returned to the fleet's seed.
+#
+# `override` and `cleared` both mean "a person decided this here", and both are immune to seeds by
+# design -- which left no way back. An appliance corrected once could never follow a later
+# rotation, so rotation-by-release quietly excluded every box anyone had ever touched. Found by
+# hitting it: validating the tombstone on the VM left that box permanently unable to take a seed.
+#
+# POST /credentials/{key}/reset, admin. Refused, changing nothing, where the appliance carries no
+# seed -- "follow the fleet" means nothing when the fleet has nothing, and DELETE is the verb for
+# "this box has no such credential".
+#
+# 0.16.1: the first image to actually carry a vendor-credential seed.
+#
+# No code change — the seed arrives from CI, not from here. The version moves because a rebuild is
+# the only way it can: CI decides what to rebuild from the push diff, so setting the repository
+# secret alone would have shipped nothing at all. See docs/CREDENTIALS.md.
+#
+# 0.16.0: a vendor credential can be corrected and removed.
+#
+# 0.15.0 could receive a credential (from a seed, or adopted from an add-on option) and then never
+# change it. A token rotated at the vendor, or one adopted with the wrong value, could only be
+# fixed by editing the operator's /data over SSH -- which on a sealed appliance means not at all.
+# Found by using it: a probe value written during validation could not be taken back off the box.
+#
+# PUT/DELETE /credentials/{key}, both admin. DELETE writes a TOMBSTONE rather than forgetting the
+# key, and that is the whole subtlety: a plain delete would leave the credential `missing`, and the
+# next reconcile pass would read the add-on that still carried it in its options and adopt the
+# value straight back -- a deletion that undid itself within one interval. The tombstone also makes
+# the reconciler blank that option, so the add-on stops using a credential the operator disowned.
+#
+# 0.15.0: the operator becomes the owner of ASCIA-DELIVERED credentials.
+#
+# `mapbox_token` had a working option, a working env export, and nobody responsible for setting it
+# — so on a real appliance the map silently fell back to CARTO and nothing said why. The operator
+# now holds every credential ASCIA delivers (as opposed to the ones it GENERATES, which stay in
+# fleet-secrets.json) and stamps them outward in the same reconcile pass as the fleet secret.
+#
+# Two things are deliberate. Values are tiered by what a leaked copy can do, and only the METERED
+# tier is allowed into add-on options at all — because options are captured, in the clear, by the
+# pre-update safety backup. And a token already set by hand is ADOPTED rather than overwritten:
+# this add-on is becoming the writer of that option, and it must not be what breaks a working box.
+#
+# No seed ships yet, so an appliance still holds nothing and still falls back to CARTO. See
+# ../../docs/CREDENTIALS.md (Classification, and the Vendor register).
+#
+# 0.12.0: reports plugin DRIFT, and drops the two superseded options.
+#
+# A plugin already matching upstream reported `current` even when this OS never validated that
+# version -- no work, no block, and a plan summarising as "plugins are on the set this OS blessed",
+# which was false. Reached by the documented interim unblock (`ha dns update` by hand). It is now
+# `drifted`: still not blocking and still nothing to apply (plugins cannot be moved back), but said
+# out loud so the next ASCIA release can take it deliberately.
+#
+# os_update_auto_install / os_update_auto_reboot are removed. Verified safe first: they were only
+# ever SCHEMA DEFAULTS, not user-set -- Supervisor's persisted user options never contained them,
+# so no appliance has a stored value the new schema would reject.
+#
+# 0.11.0: release notes reach the point of approval (5.7b). specs 15.3 asks for "detailed release
+# notes displayed before installation"; the manifest has carried them since Step 3 and they stopped
+# at the feed client. They now ride a <bundle>.meta.json sidecar written when the bundle is staged —
+# stored rather than re-fetched, because an appliance is usually offline by the time someone opens
+# the page, and the bundle may have been staged days earlier. That sidecar replaces the .min-from
+# file 0.10.0 introduced: one file answering "what did the feed say about this bundle", not two.
+#
+# Also closes a hole 0.10.0 opened by enforcing min_from only where nothing went:
+# POST /os-update/install accepts an EXPLICIT version, looks it up and queues it, skipping the plan
+# — and that is the path the UI takes, because it always sends the version it displayed. The rule
+# now lives in one function called by both entry points, and `force` does not override it. And a
+# withheld bundle is reported as `held` rather than `none`, because collapsing them made the page
+# say "Up to date" while the appliance sat on a downloaded update it was refusing.
+#
+# 0.10.0: the update CADENCE (5.7). specs/02-specifications.md 15.3 asks for a manual mode plus a
+# programmable weekly/monthly/annual one; until now the only controls were two add-on options a
+# customer could never see, could not express a window with, and that a reinstall silently reset.
+# The cadence now lives in the operator's own /data behind GET/PUT /update-policy (reading is open,
+# setting is admin), and one cadence governs the whole release — the OS first, then the add-on
+# tuple that rides in its bundle, because automating only half would leave an appliance permanently
+# split. Automatic cadences restart inside their window; that is what "unattended" has to mean.
+# A window slept through is CAUGHT UP rather than skipped (ascia-backup's lesson), and each window
+# gets exactly one attempt, so a failing update cannot re-run every five minutes taking a full
+# backup each time. os_update_auto_install / os_update_auto_reboot are no longer honoured and warn
+# at boot; they are removed next release.
+#
+# 0.9.1: after a deliberate rollback the updates page said "already running <newer version>" while
+# displaying the older one — it built that sentence from the version FLOOR, which correctly outlives
+# a rollback so the appliance does not re-push what someone just stepped back from. Suppression was
+# right, the explanation was false. Found on a real 26.1.7 -> 26.1.6 rollback.
+#
+# 0.9.0: the front door is told where Home Assistant Core ACTUALLY is, instead of assuming 8123.
+# Every ASCIA component addressed Core at a hardcoded http://homeassistant:8123 — its documented
+# default. A freshly imaged appliance SERVES Core on port 80 and answers 8123 with a 307 redirect;
+# HTTP clients follow it and look healthy, but the front door's HA WebSocket cannot, so nobody could
+# log in and the only symptom was "Could not reach Home Assistant". The appliance had the correct
+# answer from Supervisor the whole time and never asked. Now resolved from `GET /core/info` on every
+# reconcile pass, scheme included; if Supervisor cannot be read the option is left alone so a blip
+# cannot rewrite a working front door with a guess.
+#
+# 0.8.0: the upstream pin now reports its own health. `ensure_upstream_pinned` returns a
+# PinOutcome (already-pinned / pinned / unknown / failed) instead of a bool that could not tell
+# "verified" from "could not check" from "tried and failed" — and whose value the caller discarded
+# anyway. GET /status gains `upstream_pin`, including a consecutive-failure count and a `degraded`
+# flag after 3 bad passes (~15 min, against 12 h plugin timers). Re-asserting on a loop was always
+# the right design for a system that does not fork upstream; what was missing was any way to see
+# that the re-assert had stopped taking. No behaviour change to the flag itself.
+#
+# 0.7.0: adds POST /os-update/revert — a DELIBERATE rollback to the version still in the inactive
+# slot (Step 6.1). Requires a host shim that publishes can_revert / other_slot; against an older
+# shim the route refuses rather than offering a rollback the host would not perform. A version a
+# person steps back from is NOT recorded as having failed probation — the host keeps that
+# distinction so the appliance never claims an update failed when someone simply preferred the
+# previous one.
+#
+# 0.6.0: pins the upstream layers (Step 4) — Supervisor and the five plugins no longer update
+# themselves; ASCIA ships their versions with an OS release. Re-asserted every reconcile pass,
+# because a restore or repair brings back Supervisor's default, which is ON.
+#
+# 0.5.0: adds the HTTPS feed source (A3 v2) — with os_update_feed_url set, the operator downloads
+# eligible bundles into the drop directory instead of waiting for someone to copy one in. Staging
+# only; whether any of it is installed is the update cadence's decision. The hosting is Step 3.
+#
+# 0.4.0: the operator gains the OS update surface (A3) — it reports slots, versions and available
+# bundles, and asks the host shim to install one. Needs the new share:rw mapping below.
+#
+# 0.3.0: the certificate now covers every name and address the appliance has — ascia.local, the
+# bare hostname, and the current LAN address — because Android has no mDNS resolver and could not
+# reach the box by ascia.local at all. Reissues the root (constraints change), so every device
+# must re-trust once. See docs/TLS_TRUSTED_CERT_PLAN.md §9.
+version: "0.19.2148"
+description: >-
+  Zero-touch fleet provisioning. On first boot it generates the shared gateway-auth secret once
+  and injects it into every ASCIA add-on via the Supervisor API, then starts them — so no secret
+  is ever typed into the HA UI. It also mints this appliance's root CA and the front door's TLS
+  certificate. Idempotent; reconciles on a loop so the fleet self-heals.
+arch:
+  - amd64
+  - aarch64
+
+# Decision #8: Supervisor PULLS a prebuilt image; CI rewrites the version at publish time.
+# TODO(org-transfer): flip ghcr.io/feint517 -> ghcr.io/ascia when the repo moves to the org.
+image: "ghcr.io/feint517/{arch}-ascia-provisioning"
+
+# ascia-base ships its own S6 service (see rootfs) on HA's /init, so Supervisor must not inject init.
+init: false
+
+# THE one boot:auto ASCIA add-on — it is the orchestrator that configures + starts the rest.
+boot: auto
+# Start in the "services" stage so the operator comes up before application-stage add-ons.
+startup: services
+
+# Supervisor API at MANAGER level: list add-ons, set their options, start/restart them. This is
+# the single privileged capability that makes zero-touch config possible, deliberately isolated in
+# this one tiny add-on (no other ASCIA add-on holds a Supervisor role above default).
+hassio_api: true
+# `admin` (not `manager`) because pinning the appliance hostname (→ ascia.local mDNS, so clients
+# reach the box by a stable name across DHCP changes) calls the Supervisor **host** API
+# (POST /host/options), which is gated behind the admin role. Add-on management alone is `manager`.
+hassio_role: admin
+
+# Persist the generated fleet secret (/data/fleet-secrets.json) and the appliance's root CA
+# (/data/ascia-ca/) across restarts + image updates — only an uninstall-with-delete wipes them.
+# /data is the source of truth for the fleet's gateway-auth secret AND for the CA that every
+# household device trusts: losing it means re-provisioning every add-on and re-trusting every
+# phone. (Both are captured by HA add-on backups, so a restore keeps clients' trust intact.)
+#
+# ssl:rw — HA's shared SSL volume, where the operator publishes the front door's leaf + the
+# public root. This is the sanctioned handoff channel (the official Let's Encrypt/DuckDNS add-ons
+# feed certs to the rest of the system the same way), NOT a reach into another add-on's
+# filesystem. The alternative — pushing a private key through set_addon_options — would store it
+# in Supervisor's add-on config and render it in the HA UI.
+#
+# share:rw — the channel to the host's OS update shim (A3). /share is the one volume both a
+# container and the HAOS host can see (host path /mnt/data/supervisor/share), so the operator drops
+# an install request there and a systemd .path unit picks it up. Chosen over `host_dbus: true`,
+# which would have handed this add-on full systemd control of the host — root-equivalent — to
+# express one intent. Nothing here can execute anything on the host: it can only ask, and the shim
+# re-verifies the bundle's signature, compatible string and version floor before touching a slot.
+# See docs/PHASE4_A3_UPDATE_AGENT.md §5b.
+map:
+  - app_config:rw
+  - ssl:rw
+  - share:rw
+
+# Internal-only status API, reached through the BFF (single origin), not exposed on the host.
+ports:
+  8125/tcp: null
+ports_description:
+  8125/tcp: ASCIA Provisioning status API (internal; proxied by the ascia-frontend BFF)
+
+# Operator behaviour. The shared secret is GENERATED by the operator, not configured here, so
+# service_token / user_signing_key are intentionally absent from the options.
+options:
+  log_level: info
+  reconcile_interval_seconds: 300
+  # Plan-only: discover + report what WOULD change on GET /status, but make ZERO writes. Set true
+  # for the first validation run on a real VM, inspect /status, then set false to apply.
+  dry_run: false
+  # Constrain the appliance root CA to ascia.local, so a stolen CA key can only impersonate this
+  # appliance instead of any site on the internet. The extension is critical (RFC 5280), so a
+  # client that can't parse it rejects the chain — set false if the padlock fails on some platform
+  # and the next reconcile pass reissues an unconstrained root.
+  tls_name_constraints: true
+  # Also put the appliance's current LAN address in the certificate. Android has no mDNS resolver
+  # and so cannot reach the box by ascia.local at all; the address is the fallback that always
+  # works, and it self-heals within one reconcile pass when DHCP moves. Turning this off reissues
+  # the CA (tighter, names-only constraints), so every device must re-trust once.
+  tls_include_lan_ip: true
+  # Rotate this appliance's root CA: bump the number and the next reconcile pass (<=5 min) mints a
+  # brand-new root plus a fresh leaf. For a suspected key compromise or a deliberate trust reset
+  # only — EVERY household device must then re-trust via /setup/secure.
+  tls_ca_generation: 1
+  # Stop Supervisor and the five plugins (dns, audio, cli, multicast, observer) updating themselves
+  # on their 12-hour timers. ASCIA ships those versions as part of an OS release, so an appliance
+  # that moved them on its own would drift from the set we tested. Off only for a dev box that is
+  # deliberately tracking upstream.
+  pin_upstream_layers: true
+  # HTTPS feed listing available OS releases. Empty by default because the hosting does not exist
+  # yet (Step 3). Setting it only makes the operator *download* eligible bundles into the shared
+  # drop directory — whether any of it is installed is the update cadence's decision.
+  os_update_feed_url: ""
+schema:
+  log_level: list(debug|info|warning|error)?
+  reconcile_interval_seconds: int?
+  dry_run: bool?
+  tls_name_constraints: bool?
+  tls_include_lan_ip: bool?
+  tls_ca_generation: int?
+  os_update_feed_url: str?
+  pin_upstream_layers: bool?
