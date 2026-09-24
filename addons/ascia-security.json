@@ -1,0 +1,17 @@
+{
+  "addon": "ascia-security",
+  "versions": [
+    {
+      "version": "0.3.2168",
+      "state": "built",
+      "source": "4bc288ed974b6840bdc9b9a56f4235b7d29ada86",
+      "by": "published by CI",
+      "reserved_at": null,
+      "built_at": null,
+      "digests": {
+        "amd64": "sha256:e7904c9fb2b0fdd79ef935553f576175eee6353bda6270dd54c56a29af4bf090",
+        "aarch64": "sha256:ed111ed2a849df505b32935d2391cad5a15a52b2fe8d035187ab5d3491ad902e"
+      }
+    }
+  ]
+}
