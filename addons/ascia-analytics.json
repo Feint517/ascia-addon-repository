@@ -1,0 +1,17 @@
+{
+  "addon": "ascia-analytics",
+  "versions": [
+    {
+      "version": "0.3.2168",
+      "state": "built",
+      "source": "4bc288ed974b6840bdc9b9a56f4235b7d29ada86",
+      "by": "published by CI",
+      "reserved_at": null,
+      "built_at": null,
+      "digests": {
+        "amd64": "sha256:507776edbd29bd64272ee9c1b2a938d23ebc55350c363e2817f8a811fd2c3f30",
+        "aarch64": "sha256:f3e35e436457745cae0fec0df7d225832a4356f0c4f488ebebaaa263a511bcd3"
+      }
+    }
+  ]
+}
