@@ -1,0 +1,17 @@
+{
+  "addon": "ascia-frontend",
+  "versions": [
+    {
+      "version": "0.20.2168",
+      "state": "built",
+      "source": "4bc288ed974b6840bdc9b9a56f4235b7d29ada86",
+      "by": "published by CI",
+      "reserved_at": null,
+      "built_at": null,
+      "digests": {
+        "amd64": "sha256:3dd7bbed6a5331ec4c139e18b54f44dca22033c6b3790d7daed2d4c4346aca89",
+        "aarch64": "sha256:7349c8cd160d20a005e4698caf52a5d52f030197d45d1cab97eb534988e1dcc3"
+      }
+    }
+  ]
+}
