@@ -28,6 +28,14 @@
       "by": "ascia image build",
       "reserved_at": "2026-09-24T13:11:22Z",
       "digests": {}
+    },
+    {
+      "version": "0.3.2171",
+      "state": "reserved",
+      "source": "105e2e59c6f0525b7619e99b92f0948b0077e3b3",
+      "by": "ascia image build",
+      "reserved_at": "2026-09-24T13:51:57Z",
+      "digests": {}
     }
   ]
 }
