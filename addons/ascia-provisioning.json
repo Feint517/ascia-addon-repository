@@ -1,0 +1,17 @@
+{
+  "addon": "ascia-provisioning",
+  "versions": [
+    {
+      "version": "0.25.2168",
+      "state": "built",
+      "source": "4bc288ed974b6840bdc9b9a56f4235b7d29ada86",
+      "by": "published by CI",
+      "reserved_at": null,
+      "built_at": null,
+      "digests": {
+        "amd64": "sha256:1a5711b83ad9d57df97db10b929c1402fd601085b4f2cac4a890e12b86f632a1",
+        "aarch64": "sha256:b4cdf15c693aa79794cb771d452574b2ac36b56357050e99928e666fd8eaa369"
+      }
+    }
+  ]
+}
