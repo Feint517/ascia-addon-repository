@@ -1,0 +1,17 @@
+{
+  "addon": "ascia-vpn",
+  "versions": [
+    {
+      "version": "0.5.2168",
+      "state": "built",
+      "source": "4bc288ed974b6840bdc9b9a56f4235b7d29ada86",
+      "by": "published by CI",
+      "reserved_at": null,
+      "built_at": null,
+      "digests": {
+        "amd64": "sha256:5277c31f37a4d12c9f56a2009446ea599929c92d6b26b9225c900d547ed30bc6",
+        "aarch64": "sha256:80b2baaececa4e95dfa22110f85d363714b0d505abf9c6938e32f3115883f2b2"
+      }
+    }
+  ]
+}
