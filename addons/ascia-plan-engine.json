@@ -1,0 +1,17 @@
+{
+  "addon": "ascia-plan-engine",
+  "versions": [
+    {
+      "version": "0.5.2168",
+      "state": "built",
+      "source": "4bc288ed974b6840bdc9b9a56f4235b7d29ada86",
+      "by": "published by CI",
+      "reserved_at": null,
+      "built_at": null,
+      "digests": {
+        "amd64": "sha256:fc8be05661f385f471cef31001213d13e37d1cd23592ca78a3db3d40bc8adcef",
+        "aarch64": "sha256:27cfc8dd033852482cadddc8fc272f8eedb26e65f4ec49c92c3ff589f2684a95"
+      }
+    }
+  ]
+}
