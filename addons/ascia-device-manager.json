@@ -1,0 +1,17 @@
+{
+  "addon": "ascia-device-manager",
+  "versions": [
+    {
+      "version": "0.6.2168",
+      "state": "built",
+      "source": "4bc288ed974b6840bdc9b9a56f4235b7d29ada86",
+      "by": "published by CI",
+      "reserved_at": null,
+      "built_at": null,
+      "digests": {
+        "amd64": "sha256:2d939b55b3aec0ddc46d2b16d9634f2fdd8f9ec772f21208694b860476502ece",
+        "aarch64": "sha256:77b8eb11e5a26ee2392d12fa10dbf4233506105493fb20d8743b82f8feb6a61d"
+      }
+    }
+  ]
+}
