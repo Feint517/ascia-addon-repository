@@ -1,0 +1,17 @@
+{
+  "addon": "ascia-backup",
+  "versions": [
+    {
+      "version": "0.6.2168",
+      "state": "built",
+      "source": "4bc288ed974b6840bdc9b9a56f4235b7d29ada86",
+      "by": "published by CI",
+      "reserved_at": null,
+      "built_at": null,
+      "digests": {
+        "amd64": "sha256:e8129786e4c2e42d0afd05f168587003978c38729458c9432a854258d97f81c1",
+        "aarch64": "sha256:6c46222dd3a575d877582b71a8898de3227df47f5d9f8df46fa692f36f8abf5b"
+      }
+    }
+  ]
+}
