@@ -1,0 +1,17 @@
+{
+  "addon": "ascia-diagnostics",
+  "versions": [
+    {
+      "version": "0.2.2168",
+      "state": "built",
+      "source": "4bc288ed974b6840bdc9b9a56f4235b7d29ada86",
+      "by": "published by CI",
+      "reserved_at": null,
+      "built_at": null,
+      "digests": {
+        "amd64": "sha256:a011e7264e9648666fbc0512ec3e0e7245f0711fba7612ba16a25b36ff4f5e5c",
+        "aarch64": "sha256:c29a46ee04db71a265a5fba69707ea51d7f14cb20d2ad5c67bd8d14bdc61d6fd"
+      }
+    }
+  ]
+}
