@@ -1,0 +1,17 @@
+{
+  "addon": "ascia-network-manager",
+  "versions": [
+    {
+      "version": "0.3.2168",
+      "state": "built",
+      "source": "4bc288ed974b6840bdc9b9a56f4235b7d29ada86",
+      "by": "published by CI",
+      "reserved_at": null,
+      "built_at": null,
+      "digests": {
+        "amd64": "sha256:12fc2460db91ed2d8c0cefd52ce282ff61ce191021b5cb5fcf547af290f0e17f",
+        "aarch64": "sha256:44ed6b2e78bbaa3055fe1430ac96232890523582c7c5e70e421dbbc802b41829"
+      }
+    }
+  ]
+}
