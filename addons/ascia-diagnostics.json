@@ -147,11 +147,15 @@
     },
     {
       "version": "0.3.2182",
-      "state": "reserved",
+      "state": "built",
       "source": "0bf492128cf91ef9f6a103144411fd52365098d4",
       "by": "ascia image build",
       "reserved_at": "2026-10-18T15:59:09Z",
-      "digests": {}
+      "digests": {
+        "aarch64": "sha256:67f327a32e2a4fa24a94e9374462492b02606fc991edd7a30b48a2589d9b8feb",
+        "amd64": "sha256:b7e9e11baed0befcb9bb6dc4f8530b9485168ff39a82f92cfed8f7badcba507c"
+      },
+      "built_at": "2026-10-18T16:03:27Z"
     }
   ]
 }
