@@ -1,0 +1,13 @@
+{
+  "addon": "ascia-automations",
+  "versions": [
+    {
+      "version": "0.1.1",
+      "state": "reserved",
+      "source": "9d19b1c8c062d9d8e763dda2c2e589645c385138",
+      "by": "ascia image build",
+      "reserved_at": "2026-10-23T18:25:49Z",
+      "digests": {}
+    }
+  ]
+}
