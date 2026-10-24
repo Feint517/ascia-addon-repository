@@ -116,6 +116,14 @@
         "amd64": "sha256:0c0d4163a7eeed7508851a16a1510d586076e02fc816bad99f0e34cafb255b35"
       },
       "built_at": "2026-10-23T18:33:04Z"
+    },
+    {
+      "version": "0.5.2179",
+      "state": "reserved",
+      "source": "33030b1f84efd6beb201a2e10d4389322f57b0f9",
+      "by": "ascia image build",
+      "reserved_at": "2026-10-24T22:58:15Z",
+      "digests": {}
     }
   ]
 }

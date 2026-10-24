@@ -1,0 +1,13 @@
+{
+  "addon": "ascia-profiles",
+  "versions": [
+    {
+      "version": "0.1.1",
+      "state": "reserved",
+      "source": "33030b1f84efd6beb201a2e10d4389322f57b0f9",
+      "by": "ascia image build",
+      "reserved_at": "2026-10-24T22:58:15Z",
+      "digests": {}
+    }
+  ]
+}
